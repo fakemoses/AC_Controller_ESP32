@@ -1,4 +1,4 @@
-#include <ESP8266WiFi.h>  // or ESP8266WiFi.h
+#include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include "IRremoteESP8266.h"
 #include "IRac.h"
@@ -6,9 +6,16 @@
 #include "setup_page.h"
 #include "control_page.h"
 
+//// TODO
+//// LittleFS writes one time. How about next compile? address this
+//// Allow user to change info, connection, AC type. 
+//// Give more robust info to the user
+
 AsyncWebServer server(80);
-const int irPin = 4;  // Change to your actual IR LED pin
+const int irPin = 4;
 IRac ac(irPin);
+
+bool triggeredToday[10] = {false};
 
 void setup_ac() {
   ac.next.protocol = getProtocolFromString(config.acType);
@@ -66,4 +73,38 @@ void setup() {
 
 void loop() {
   // Nothing — async handles everything
+  checkSchedules();
+}
+
+void checkSchedules() {
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) return;
+
+  int hour   = timeinfo.tm_hour;
+  int minute = timeinfo.tm_min;
+
+  for (int i = 0; i < scheduleConfig.count; i++) {
+    ScheduleItem &s = scheduleConfig.items[i];
+
+    if (!s.active) continue;
+
+    if (hour == s.hour &&
+        minute == s.minute &&
+        !triggeredToday[i]) {
+
+      if (s.turnOn) {
+        ac.next.power = true;
+        ac.sendAc();
+      } else {
+        ac.next.power = false;
+        ac.sendAc();
+      }
+
+      triggeredToday[i] = true;
+    }
+  }
+
+  if (hour == 0 && minute == 0) {
+    memset(triggeredToday, 0, sizeof(triggeredToday));
+  }
 }
